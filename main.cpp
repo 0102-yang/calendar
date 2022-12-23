@@ -1,54 +1,41 @@
 ﻿#include <array>
+#include <cassert>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
 
-using namespace std;
-
 class Date
 {
 public:
-    Date(unsigned year, unsigned month, unsigned day) : m_year(year), m_month(month), m_day(day) {}
+    Date(int year_, int month_, int day) : year_(year_), month_(month_), day_(day) {}
 
     /// <summary>
     /// Calculate the number of days between two dates.
     /// </summary>
     /// <param name="date">another date</param>
     /// <returns>number of days</returns>
-    unsigned operator-(const Date& date) const
+    auto operator-(const Date& date) const -> unsigned
     {
-        unsigned smallerYear = min(m_year, date.m_year);
-
-        auto offsetDaysBetweenYears = [](unsigned smallerYear, unsigned LargerYear) -> unsigned {
-            if (smallerYear == LargerYear) return 0;
-
-            unsigned days = 0;
-            for (; smallerYear < LargerYear; smallerYear++) days += isLeapYear(smallerYear) ? 366 : 365;
-
-            return days;
+        // 0001/01/01 is day 1
+        auto days_before_year = [](int year_) {
+            assert(year_ >= 1);
+            unsigned y = year_ - 1;
+            return y * 365 + y / 4 - y / 100 + y / 400;
         };
 
-        auto offsetDaysFromJanToMonth = [](unsigned year, unsigned month) {
-            unsigned days = 0;
-            for (unsigned i = 1; i < month; i++) {
-                if (i == 2 && isLeapYear(year)) days += SPECIAL_DAY;
-
-                days += sm_totalDaysOfNormalYearMonth[i - 1];
+        auto days_before_month = [](int year_, int month_) {
+            assert(month_ >= 1 && month_ <= 12);
+            unsigned days = days_before_months[month_];
+            if (month_ >= 2 && IsLeapYear(year_)) {
+                days++;
             }
             return days;
         };
 
-        unsigned offsetDay1 = 0, offsetDay2 = 0;
-        // Compute offsetDay1
-        offsetDay1 += offsetDaysBetweenYears(smallerYear, m_year);
-        offsetDay1 += offsetDaysFromJanToMonth(m_year, m_month);
-        offsetDay1 += m_day - 1;
-        // Compute offsetDay2
-        offsetDay2 += offsetDaysBetweenYears(smallerYear, date.m_year);
-        offsetDay2 += offsetDaysFromJanToMonth(date.m_year, date.m_month);
-        offsetDay2 += date.m_day - 1;
-
-        return max(offsetDay1, offsetDay2) - min(offsetDay1, offsetDay2);
+        int days1 = days_before_year(year_) + days_before_month(year_, month_) + day_;
+        int days2 = days_before_year(date.year_) + days_before_month(date.year_, date.month_) + date.day_;
+        return abs(days1 - days2);
     }
 
     /// <summary>
@@ -56,42 +43,41 @@ public:
     /// </summary>
     /// <param name="year">year</param>
     /// <returns>true if year is leap year</returns>
-    static bool isLeapYear(unsigned year) { return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0; }
+    static auto IsLeapYear(unsigned year_) -> bool { return year_ % 4 == 0 && (year_ % 100 != 0 || year_ % 400 == 0); }
 
     static constexpr unsigned MONTHS_OF_YEAR = 12;
     static constexpr unsigned DAYS_OF_WEEK = 7;
 
 private:
-    const unsigned m_year;
-    const unsigned m_month;
-    const unsigned m_day;
+    const int year_;
+    const int month_;
+    const int day_;
 
-    static array<unsigned, MONTHS_OF_YEAR> sm_totalDaysOfNormalYearMonth;
-    static constexpr unsigned SPECIAL_DAY = 29;
+    static std::array<int, MONTHS_OF_YEAR + 1> days_before_months;
 };
 
-array<unsigned, Date::MONTHS_OF_YEAR> Date::sm_totalDaysOfNormalYearMonth{31, 28, 31, 30, 31, 30,
-                                                                          31, 31, 30, 31, 30, 31};
+std::array<int, Date::MONTHS_OF_YEAR + 1> Date::days_before_months{0,   0,   31,  59,  90,  120, 151,
+                                                                   181, 212, 243, 273, 304, 334};
 
 class MonthPrinter
 {
 public:
-    MonthPrinter(unsigned year, unsigned month) : m_year(year), m_month(month)
+    MonthPrinter(unsigned year_, unsigned month_) : year_(year_), month_(month_)
     {
-        m_outputStartDay = sm_monthStartDay;
-        switch (m_month) {
+        output_start_day_ = MONTH_START_DAY;
+        switch (month_) {
         case 1:
         case 3:
         case 5:
         case 7:
         case 8:
         case 10:
-        case 12: m_outputEndDay = 31; break;
+        case 12: output_end_day_ = 31; break;
         case 4:
         case 6:
         case 9:
-        case 11: m_outputEndDay = 30; break;
-        case 2: m_outputEndDay = Date::isLeapYear(m_year) ? 29 : 28; break;
+        case 11: output_end_day_ = 30; break;
+        case 2: output_end_day_ = static_cast<unsigned>(Date::IsLeapYear(year_)) + 28U; break;
         default: break;
         }
     }
@@ -99,130 +85,153 @@ public:
     /// <summary>
     /// Centrally display the month name.
     /// </summary>
-    void printMonthName()
+    void PrintMonthName()
     {
-        const string& monthName = sm_monthDisplayName[m_month - 1];
-        unsigned size = static_cast<unsigned>(monthName.length());
+        const std::string& month_name = months_display_name[month_];
+        auto size = static_cast<unsigned>(month_name.length());
 
-        unsigned prefixSpacesLength, suffixSpacesLength;
-        if ((sm_lineMaxLength - size) % 2 == 0) {
-            prefixSpacesLength = suffixSpacesLength = (sm_lineMaxLength - size) >> 1;
+        unsigned prefix_spaces_length;
+        unsigned suffix_spaces_length;
+        if ((LINE_MAX_LENGTH - size) % 2 == 0) {
+            prefix_spaces_length = suffix_spaces_length = (LINE_MAX_LENGTH - size) >> 1;
         } else {
-            suffixSpacesLength = (sm_lineMaxLength - size) >> 1;
-            prefixSpacesLength = suffixSpacesLength + 1;
+            suffix_spaces_length = (LINE_MAX_LENGTH - size) >> 1;
+            prefix_spaces_length = suffix_spaces_length + 1;
         }
 
-        for (unsigned i = 0; i < prefixSpacesLength; i++) cout << ' ';
-        cout << monthName;
-        for (unsigned i = 0; i < suffixSpacesLength; i++) cout << ' ';
+        for (unsigned i = 0; i < prefix_spaces_length; i++) {
+            std::cout << ' ';
+        }
+        std::cout << month_name;
+        for (unsigned i = 0; i < suffix_spaces_length; i++) {
+            std::cout << ' ';
+        }
     }
 
     /// <summary>
     /// Print week header.
     /// </summary>
-    void printWeekName() { cout << sm_weekHeader; }
+    void PrintWeekName() { std::cout << " Su Mo Tu We Th Fr Sa "; }
 
     /// <summary>
     /// Print date numbers line by line when call this function.
     /// </summary>
     /// <returns>true if any number was printed.</returns>
-    bool printDates()
+    auto PrintDates() -> bool
     {
-        if (m_outputStartDay > m_outputEndDay) return false;
+        if (output_start_day_ > output_end_day_) {
+            for (unsigned i = 0; i < LINE_MAX_LENGTH; i++) {
+                std::cout << ' ';
+            }
+            return false;
+        }
 
-        if (m_outputStartDay == sm_monthStartDay) {
+        const std::string spaces_literal("   ");
+        const Date standard_date(1970, 2, 1);
+
+        if (output_start_day_ == MONTH_START_DAY) {
             // The first line
-            Date currentDate(m_year, m_month, 1);
-            unsigned spaces = (currentDate - sm_standardDate) % 7;
+            Date current_date(year_, month_, 1);
+            unsigned spaces = (current_date - standard_date) % 7;
 
-            for (unsigned i = 0; i < spaces; i++) cout << sm_spacesLiteral;
+            for (unsigned i = 0; i < spaces; i++) {
+                std::cout << spaces_literal;
+            }
 
-            for (unsigned i = 0; i < sm_lineMaxCount - spaces; i++) printf("%3d", m_outputStartDay++);
-        } else if (m_outputStartDay + 6 <= m_outputEndDay) {
-            for (unsigned i = 0; i < sm_lineMaxCount; i++) printf("%3d", m_outputStartDay++);
+            for (unsigned i = 0; i < LINE_MAX_COUNT - spaces; i++) {
+                printf("%3d", output_start_day_++);
+            }
+        } else if (output_start_day_ + 6 <= output_end_day_) {
+            for (unsigned i = 0; i < LINE_MAX_COUNT; i++) {
+                printf("%3d", output_start_day_++);
+            }
         } else {
             // The last line
-            unsigned spaces = sm_lineMaxCount - 1 - (m_outputEndDay - m_outputStartDay);
+            unsigned spaces = LINE_MAX_COUNT - 1 - (output_end_day_ - output_start_day_);
 
-            for (unsigned i = 0; i < sm_lineMaxCount - spaces; i++) printf("%3d", m_outputStartDay++);
+            for (unsigned i = 0; i < LINE_MAX_COUNT - spaces; i++) {
+                printf("%3d", output_start_day_++);
+            }
 
-            for (unsigned i = 0; i < spaces; i++) cout << sm_spacesLiteral;
+            for (unsigned i = 0; i < spaces; i++) {
+                std::cout << spaces_literal;
+            }
         }
-        cout << ' ';
+        std::cout << ' ';
 
         return true;
     }
 
 private:
-    static array<const string, Date::MONTHS_OF_YEAR> sm_monthDisplayName;
-    static const string sm_weekHeader;
-    static const string sm_spacesLiteral;
-    static const Date sm_standardDate;
+    static std::array<const std::string, Date::MONTHS_OF_YEAR + 1> months_display_name;
 
-    static constexpr unsigned sm_lineMaxLength = 22;
-    static constexpr unsigned sm_lineMaxCount = 7;
-    static constexpr unsigned sm_monthStartDay = 1;
+    static constexpr unsigned LINE_MAX_LENGTH = 22;
+    static constexpr unsigned LINE_MAX_COUNT = 7;
+    static constexpr unsigned MONTH_START_DAY = 1;
 
-    unsigned short m_outputStartDay;
-    unsigned short m_outputEndDay;
-    unsigned m_year;
-    unsigned m_month;
+    uint16_t output_start_day_;
+    uint16_t output_end_day_;
+    unsigned year_;
+    unsigned month_;
 };
 
-array<const string, Date::MONTHS_OF_YEAR> MonthPrinter::sm_monthDisplayName{
+std::array<const std::string, Date::MONTHS_OF_YEAR + 1> MonthPrinter::months_display_name{
+    "", // 1-based index
     "January", "February", "March",     "April",   "May",      "June",
     "July",    "August",   "September", "October", "November", "December"};
-
-const string MonthPrinter::sm_weekHeader(" Su Mo Tu We Th Fr Sa ");
-
-const string MonthPrinter::sm_spacesLiteral("   ");
-
-const Date MonthPrinter::sm_standardDate(1970, 2, 1);
 
 class PrinterProxy
 {
 public:
-    static void printMonth(unsigned year, unsigned month) { printMonthsVec(year, {month}); }
+    static void PrintMonth(unsigned year_, unsigned month_) { PrintMonthsVec(year_, {month_}); }
 
-    static void printMonthsVec(unsigned year, const vector<unsigned>& months)
+    static void PrintMonthsVec(unsigned year_, const std::vector<unsigned>& months)
     {
         // Construct month printers
-        vector<MonthPrinter> printers;
-        unsigned size = static_cast<unsigned>(months.size());
-        for (unsigned i = 0; i < size; i++) printers.emplace_back(year, months[i]);
+        std::vector<MonthPrinter> printers;
+        auto size = static_cast<unsigned>(months.size());
+        for (unsigned i = 0; i < size; i++) {
+            printers.emplace_back(year_, months[i]);
+        }
 
         // Start printing
-        for (unsigned i = 0; i < size; i++) printers[i].printMonthName();
-        cout << endl;
+        for (unsigned i = 0; i < size; i++) {
+            printers[i].PrintMonthName();
+        }
+        std::cout << std::endl;
 
-        for (unsigned i = 0; i < size; i++) printers[i].printWeekName();
-        cout << endl;
+        for (unsigned i = 0; i < size; i++) {
+            printers[i].PrintWeekName();
+        }
+        std::cout << std::endl;
 
         bool status = true;
         while (status) {
             for (unsigned i = 0; i < size; i++) {
-                status &= printers[i].printDates();
+                status &= printers[i].PrintDates();
             }
-            cout << endl;
+            std::cout << std::endl;
 
-            if (!status) break;
+            if (!status) {
+                break;
+            }
         }
-        cout << endl;
+        std::cout << std::endl;
     }
 };
 
-int main(int argc, char* argv[])
+auto main(int argc, char* argv[]) -> int
 {
     if (argc < 2) {
-        cerr << "Invalid args." << endl;
+        std::cerr << "Invalid args." << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    unsigned long year = stoul(argv[1]);
+    uint32_t year = std::stoul(argv[1]);
 
     // Print 3 month in a row by default
     for (unsigned i = 0; i < 4; i++) {
-        unsigned startMonth = i * 3 + 1;
-        PrinterProxy::printMonthsVec(year, {startMonth, startMonth + 1, startMonth + 2});
+        unsigned start_month = i * 3 + 1;
+        PrinterProxy::PrintMonthsVec(year, {start_month, start_month + 1, start_month + 2});
     }
 }
